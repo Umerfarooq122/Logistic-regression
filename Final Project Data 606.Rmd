@@ -1,0 +1,795 @@
+---
+title: "Do resting blood pressure, cholesterol, age, sex and heart rate predict presence of hypertension?"
+date: "`r Sys.Date()`"
+author: "Umer Farooq"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+```{r  message=FALSE, warning=FALSE, include=FALSE}
+library(tidyverse)
+library(psych)
+library(ggridges)
+library(caTools)
+```
+
+## **Abstract:**
+
+Hypertension is one of the most common inherited diseases among Americans. The consequences of having hypertension are so severe that it puts one's life at stake. Hypertension, also known as High blood pressure, is the main cause of kidney failure, stroke, diabetic, Vision loss, Erectile dysfunction, Memory loss, Angina(chest pain) and heart failure. Early detection is an effective way to control the incidence of hypertension by knowing risk factors such as Age, cholesterol level, resting blood pressure, blood sugar, heart rate and exercising habits e.t.c. The method used to analyze these significant risk factors to cause hypertension is logistic regression [1]. Similar to linear regression, logistic regression is a member of the family of generalized linear models. Logistic regressions were initially created to categorize binary outcomes based on a number of independent categorical or continuous factors. These predictions are made via logistic regression using probability discovered through maximum-likelihood estimations [2]. 
+
+In this particular research, a data set that has been obtained from one of the largest and secure data resources website Kaggle.com. The data set does incorporate all the significant factors mentioned in the paragraph above. Although, the data set does require some preprocessing as it is not clean and ready to be analyzed. Once the data set is prepared for the analysis then an exploratory data analysis (EDA) will be carried out before the application of logistic regression. After carrying out EDA, a thorough application of logistics regression will be done. Starting from a simple regression model where only one factor will be used as a function of hypertension, to a more advanced model that might incorporate all the important factors. In this whole process, a thorough explanation will be asserted alongside source code to explain the process along the way and comments will be provided to explain different coefficients of logistic regression. 
+
+## **Loading and transforming data set:**
+
+### **Loading the data set:**
+The data set used in this study has been obtained from the kaggle link: 
+https://www.kaggle.com/datasets/prosperchuks/health-dataset?select=hypertension_data.csv. 
+After downloading the data set it was uploaded to a github repository so that it can be called into Rstudio environment while keeping the work's reproducibility. In order to load the data set into Rstudio we will use `read.csv()` function from base R to read the URL of the stored repository
+
+```{r  Loading-data, echo=TRUE, results='hide', warning=FALSE, message=FALSE}
+hyper_t <- read.csv("https://raw.githubusercontent.com/Umerfarooq122/Data_sets/main/hypertension_data.csv")
+```
+
+Now in order to see if the data set has been loaded properly with all the columns we can use `head()` function from Base R which can display the first six row of the data set.
+
+```{r displaying-head}
+knitr::kable(head(hyper_t))
+```
+
+We can see that the data set has been loaded properly into our Rstudio environment and now we can go ahead and analyze the data set but before starting to analyze we have to bear in mind that our data set might not be in a clean form to work with so we'll have to wrangle and transform our data set to make it analyze worthy.
+
+### **Wrangling and Transforming:**
+
+First, we will look at the structure of the data set, Since we will be carrying out logistic regression so first we will look at the types of data in each variable/column. In order to do that we will use `str()` function.
+
+```{r}
+str(hyper_t)
+```
+
+As we  can see that a lot of columns has numeric and integer data type which is true for some columns but other columns like `sex`,`cp`,`fbs`,`exang`,`slope`,`ca`,`thal` and `target` have a factor data type. So we will need to fix that. But before changing data type of any columns we need to look out for any missing values in those rows. we will `is.na()` to see any missing values. According to our previous findings in proposal there in total 25 missing values in the data  set:
+
+```{r}
+sum(is.na(hyper_t))
+```
+And if we check column wise all of those missing values are in `sex` column
+
+```{r}
+knitr::kable(hyper_t[is.na(hyper_t$sex),])
+```
+
+Now we can see that apart from `age` column in the data set every other variable/column has the same value for each of those missing values so we can ignore those rows and since they are only 25 out 26k (way below 5%) observations so we can easily impute it from our data set. 
+
+```{r}
+hyper_t <- hyper_t[!(is.na(hyper_t$sex)),]
+```
+
+After imputation lets quickly confirm that our data set is free from any missing values using `sum()` and `is.na()` functions:
+
+```{r}
+sum(is.na(hyper_t))
+```
+
+Now we do not have any missing values in our data set so the next step is to manage the data type of the columns. The source of our data set does gives us the information about data type of columns and according to the source of data set, columns like `sex`, `cp`, `fbs`, `exang`, `slope`, `ca`, `thal` and `target` have a factor data type. So let's change that first and we can change the factors like 0 and 1 to F(female) and M (male), in sex column, respectively:
+
+```{r}
+
+hyper_t[hyper_t$sex == 0,]$sex <- "F" # Replacing 0 by F
+hyper_t[hyper_t$sex == 1,]$sex <- "M" # Replacing 1 by M
+
+
+hyper_t$sex <- as.factor(hyper_t$sex)
+hyper_t$cp <- as.factor(hyper_t$cp)
+hyper_t$fbs <- as.factor(hyper_t$fbs)
+hyper_t$restecg <- as.factor(hyper_t$restecg)
+hyper_t$exang <- as.factor(hyper_t$exang)
+hyper_t$slope <- as.factor(hyper_t$slope)
+hyper_t$thal <- as.factor(hyper_t$thal)
+
+
+hyper_t$target <- ifelse(test = hyper_t$target == 0, yes = "Non-Hypertension", no = "Hypertension")
+hyper_t$target <- as.factor(hyper_t$target)
+```
+
+After changing the type of columns now lets recall `str()` function again to see if everything in our data frame is according to the way they were explained in the source
+
+```{r}
+str(hyper_t)
+```
+
+Now we can see that we have columns bearing integers, numeric and factors with different levels as mentioned in the source of data set. Our data set is not ready for analysis and modeling:
+
+## **Exploratory Data Analysis**
+
+
+In this particular section we will explore different aspects of data sets and will try to visualize and check the dispersion of data. let's check out the summary of columns that might effect hypertension according to the research.
+
+### Age
+
+```{r}
+describe(hyper_t$age)
+```
+As we can that our mean age is around 55-56 years with minimum of 11 and maximum of 98 years old. we can see the distribution more clearly by plotting a graph:
+
+```{r density-plot-for-age}
+ggplot()+
+  geom_histogram(data = hyper_t, mapping = aes(x=age, fill = target), color = "black", bins = 30)+
+  geom_vline(xintercept=mean(hyper_t$age), color='red')+labs(x="Age", y="Count",title ="Distribution plot of Age")+theme_bw()
+```
+
+So we can see that we have a nice distribution of age ranging from young to very old people even though our mean is on the higher side but we will still further look into age as a factor causing hypertension. We can also create a contingency table using `xtabs()` function. The contingency table gives the number of cases in each subgroup. For instance, if we apply `xtabs()`function to `target` and `age` column it will give us the number of people having and not having hypertension in each age subgroup as shwon below:
+
+```{r}
+knitr::kable(xtabs(~target+age, data = hyper_t))
+#xtabs(~target+age, data = hyper_t)
+```
+
+First row in the contingency table represents ages of patient or respondents. Similarly, second and third rows represent number of patient in that age group not having and having hypertension, respectively. 
+
+
+### Sex: 
+
+Sex could arguably be another factor that might affect hyper tension. Over here before putting sex in our model we will need to check out for the distribution among male and female patients. Since we change the values of 0 and 1 to "F" and "M", respectively so instead of plotting lets quickly have a look at contingency table.
+
+```{r}
+knitr::kable(xtabs(~ target + sex, data=hyper_t))
+```
+
+So we can see that gender/sex, even though could arguably be a factor in causing hypertension since male and female body have different response to different medical condition, but we can not use this data set to predict hypertension based on sex/gender since the data has been artificially set in a way that it has equal number of male and female respondents and equal number of responses for both gender in favor of having hypertension and not having hypertension. 
+
+In this particular study we will later on use logistic regression which talks about logs odd and logs of the odd ratios and if we do a manual calculations to check out log of odds of female and male having hypertension so we get the same answer:
+
+```{r}
+female.log.odds <- log(5892/7137)
+female.log.odds
+```
+
+Similarly for males:
+
+```{r}
+male.log.odds <- log(5892/7137)
+male.log.odds
+```
+So we can see that we get same answer for both and if we check out the log of the odd ratio we get a zero as shown below:
+
+```{r}
+male.log.odds.ratio <- log((5892/7137)/(5892/7137))
+male.log.odds.ratio
+```
+
+logs odd and log of the odds will be explained later one when we apply simple logistic regression but for now we will not include gender/sex into our analysis:
+
+### Resting systolic blood pressure:
+
+Systolic blood pressure is another significant factor that can cause hypertension. Most of the time someone with a high blood pressure is automatically considered hypertensive, in fact high blood pressure is another word for hypertension but today we will see if its just a high resting systolic blood pressure or is there more to it. We can quickly check out the summary using `describe()` function:
+
+```{r}
+describe(hyper_t$trestbps)
+```
+
+We can see a very good distribution of the resting systolic blood pressure. It ranges from 94 mm of Hg (mercury) to 200 mm of Hg and the mean value is around 131.59 mm of Hg which is a very good indication of having evenly distributed data. We can also plot this data using a histogram.
+
+```{r}
+ggplot()+
+  geom_histogram(data = hyper_t, mapping = aes(x=trestbps, fill=target), color = "black", bins = 20)+theme_bw()+
+  geom_vline(xintercept=mean(hyper_t$trestbps), color='red')+labs(x="Resting systolic blood pressure", y="Count",title ="Distribution of Resting Blood pressure (systolic)")
+```
+
+To check the distribution of resting blood pressure among hypertensive and non-hypertensive patients we can go ahead and plot a density ridges plot as shown below:
+
+```{r message=FALSE}
+ggplot(hyper_t, aes(x = trestbps, y = target, fill=target)) + geom_density_ridges(alpha = .7)+labs(x="Resting blood pressure(systolic)", y= "", title = "Desnity Ridges Plot of Blood Pressure")+theme_bw()+theme(legend.position = "none")
+```
+
+
+
+Similarly on a contingency table:
+
+```{r}
+knitr::kable(xtabs(~target+trestbps, data = hyper_t))
+```
+
+Well if we look at the contingency table we kind of get the idea that even people with low systolic resting blood pressure are hypertensive and as the blood pressure goes up toward normal range the number of hypertensive patients drops and as we crosses the 126 mm of Hg the number of hypertensive patients increases with exceptions. Surprisingly people with higher blood pressure (at 192 and 200) are not hypertensive.
+
+We need to check these exceptions and see if other variable like chest pain, fasting blood sugar, heart rate e.t.c are playing their role. For instance, at 115 mm of Hg there are 262 hypertensive patients so lets check what else do we have at this particular blood pressure:
+
+```{r}
+hyper_115 <- hyper_t|>
+  filter(trestbps == 115)
+```
+
+```{r}
+hyper_rest <- hyper_t|>
+  filter(trestbps != 115)
+```
+
+Let's compare the filtered data frame (hyper_115) to rest of the data (hyper_rest):
+
+```{r}
+knitr::kable(describe(hyper_rest))
+```
+
+
+```{r}
+knitr::kable(describe(hyper_115))
+```
+
+After doing a rough comparison of both data frames(hyper_t and hyper_115) we can see that some parameters has increased significantly. Parameter like mean cholesterol, mean age, mean heart rate e.t.c. Which kind of indicates that there is a lot more to hypertension than just having a high blood pressure. 
+
+
+### Fasting blood sugar:
+
+Blood sugar also cause hypertension.Diabetes and high blood pressure are closely related. In addition to having similar risk factors and causes, diabetes can also raise blood pressure. Eventually, the conditions that induce high blood pressure can result from insulin resistance and high blood glucose levels [3]. Lets check out the how many people with hypertension have a high blood pressure
+
+```{r}
+xtabs(~target+fbs, data = hyper_t)
+```
+
+Another astonishing result, as we witness a lot of people with fasting blood sugar less than 120 mg/ are hypertensive while almost equal amount of people with fasting blood sugar level higher than 120 mg/ are either hypertensive or non-hypertensive. Which is kind of strange considering the research done in the reference shared above.
+
+```{r}
+ggplot(hyper_t, aes(x = fbs, y = target, fill=target)) + geom_bar(stat = "identity")+labs(x="Fasting blood sugar", y= "", title = "Desnity Ridges Plot of Fasting Blood Sugar")+theme_bw()+theme(legend.position = "none")
+```
+
+
+
+### Cholesterol:
+
+High cholesterol and high blood pressure (hypertension) are related. Your arteries hardens and narrows because of cholesterol plaque and calcium. As a result, pumping blood through them requires significantly more effort from your heart. Consequently, Your blood pressure goes up too [4]. Lets check out the summary statistics of our data for the column cholesterol using `describe()` function.
+
+```{r}
+describe(hyper_t$chol)
+```
+
+Anything above 240 mg/dl when it comes to total cholesterol is very harmful [4] and as we can see that our mean is a bit on higher side but do have a very good variation in the data ranging from minimum of 126 mg/dl to 564 mg/dl. We are not going to create a contingency table since the range is too high and the table is going to be huge and not easy o understand so instead we will plot a ridge density plot to see how cholesterol is distributed in hypertensive and non hypertensive patients:
+
+```{r message=FALSE}
+ggplot(hyper_t, aes(x = chol, y = target, fill=target)) + geom_density_ridges(alpha=.6, color='black')+labs(x="Cholesterol", y="", title = "Density Ridges Plot of Cholesterol ")+theme_bw()+theme(legend.position = "none")
+```
+and a general distribution of cholesterol.
+
+```{r}
+ggplot()+
+  geom_histogram(data = hyper_t, mapping = aes(x=chol, fill=target), color = "black", bins = 20)+theme_bw()+
+  geom_vline(xintercept=mean(hyper_t$chol), color='red')+labs(x="Cholesterol", y="Count",title ="Distribution of Cholesterol (systolic)")
+```
+
+
+### Chest pain:
+
+High blood pressure can damage your arteries by making them less elastic, which decreases the flow of blood and oxygen to your heart and leads to heart disease. In addition, decreased blood flow to the heart can cause, chest pain, also called angina [5]. Since we got the data for chest pain in ordinal form so its better to use it because a patient might not have high blood pressure, blood sugar and cholesterol on the day but what if the data collected was on a day when the hypertensive patient were taking proper precaution to keep those indicators down. So in that case we can refer to angina since angina is caused by permanent hypertension.
+
+```{r}
+hyper_t %>%
+  group_by(cp) %>%
+  summarise(n = n())
+```
+
+In the above grouped summary we have 12314 patients with asymptomatic chest pain, 4456 patients with typical angina, 7392 patients with atypical angina and 1896 with no angina pain. Let's create a contingency table and see how many patients with hypertension is having angina:
+
+```{r}
+xtabs(~target+cp, data = hyper_t)
+```
+
+As we can see that there are a lot of patients who has no symptoms of chest pain are non-hypertensive. Conversely, high number patients with angina and non angina chest pain are hypertensive. If we go back to our previous statement which stated :`patient might not have high blood pressure, blood sugar and cholesterol on the day but what if the data collected was on a day when the hypertensive patient were taking proper precaution to keep those indicators down. So in that case we can refer to angina since angina is caused by permanent hypertension` Now in order to prove our point lets filter the data for patients who has angina and see if the means of resting blood pressure for those patients is lower than overall mean. If we get a Yes it means that our assumption was right. 
+
+```{r}
+hyper_angina <- hyper_t |>
+  filter(cp==1)
+```
+
+```{r}
+summarise(hyper_angina, mean = mean(trestbps))
+```
+
+So as we can see that mean of resting blood pressure is lower than overall mean, almost around 80% of patients have angina are hypertensive which kind of proves the point that maybe patients with hypertension had lower blood pressure on the day only.
+
+### Chest Vessels:
+
+In our data we have one columns that accounts for the number of vessels narrowed more than 50%. The data ranges from 0 to 4.
+
+```{r}
+describe(hyper_t$ca)
+```
+
+
+```{r}
+xtabs(~target+ca, data = hyper_t)
+```
+
+
+```{r}
+ggplot(hyper_t, aes(x = ca, fill=target)) + geom_bar( color='black')+labs(x="Chest Vessels", y="", title = "Chest Vessels plot")+theme_bw()
+```
+
+
+
+### Maximum Heart rate achieved:
+
+```{r}
+describe(hyper_t$thalach)
+```
+
+
+```{r}
+ggplot()+
+  geom_histogram(data = hyper_t, mapping = aes(x=thalach, fill=target), color = "black", bins = 20)+theme_bw()+
+  geom_vline(xintercept=mean(hyper_t$thalach), color='yellow')+labs(x="Maximum heart rate", y="Count",title ="Distribution of Heart rate")
+```
+
+
+```{r warning=FALSE, message=FALSE}
+ggplot(hyper_t, aes(x = thalach, y = target, fill=target)) + geom_density_ridges(alpha=.6, color = "black")+labs(x="Maximum heart rate", y="", title = "Density of hypertensive and non hypertensive patients")+theme_bw()+theme(legend.position = "none")
+```
+
+
+
+### **Exercise Induced Angina:**
+
+```{r}
+xtabs(~target+exang, data = hyper_t)
+```
+
+## **Logistic Regression:**
+
+Now we are going to apply logistic regression on our `target` column as a function any independent column like `Blood pressure`, `Heart rate`. `Chest pain` e.t.c and to see the summary of model and check out the co-efficient. Our focus will be on important independent variable that we explored in EDA but before that we will need to understand how logistic regression works so we will start with sex as an independent variable or a function of hypertension and see how it responds. We already found out through EDA that we have equal number of male and female patients that are equally hypertensive and non- hypertensive but lets apply logistic regression and see what happens:
+
+
+```{r}
+log_sex <- glm(target ~ sex, data=hyper_t, family="binomial")
+```
+
+Let's call the summary function on our model and see what happens:
+
+```{r}
+summary(log_sex)
+```
+We can see that summary contains all the details about model. It start with calling the model, then it portrays deviance residuals, and after that we have the coefficients in which the intercept is log odds of patients having hypertension but the overall equation comes out to be:
+                $$odds of hypertension = -.1917-3.773e-15 * M$$
+Now this means that if the patient is female:
+                $$odds of hypertension = -.1917-3.773e-15 * 0$$
+                $$odds of hypertension = -.1917$$
+and odds of male patients having hypertension is:
+                $$odds of hypertension = -.1917-3.773e-15 * 1$$
+                $$odds of hypertension = -.1917-3.773e-15$$
+                $$odds of hypertension = -.1917$$
+                
+and as we can see both has same log odds to have hyper tension. The second coefficient is the log odds ratio between male and female which is almost equal to zero and has p = 1, meaning that it has no statistical significant. This was the reason why we suggested not add sex as a predictor or function of hypertension since the data set has been set in a way that we automatically have same off for each possibility. We can also find out probability from log odds. Below I have created a small function that does it for us.
+
+```{r}
+logit_to_probability <- function(logit){
+  odds <- exp(logit)
+  probability <- odds / (1 + odds)
+  return(probability)}
+```
+
+```{r}
+logit_to_probability(-.1917)
+```
+
+As we can see that both male and female has same log odds so there respectively probability will be equal too.
+
+
+Similarly we can check a continuous independent variable like resting blood pressure and check out the coefficients:
+
+```{r}
+log_bps <- glm(target ~ trestbps, data=hyper_t, family="binomial")
+summary(log_bps)
+```
+So we can see that our equation comes out to be:
+
+
+$$logs of hypertension = -2.4672669 + 0.0172720  *  Resting BP$$
+So if hypothetically is blood pressure is 0 the odd of having hypertension are -2.467. We can also plot a probability curve and manually calculate probability, to see how the probability of having heart disease increases with increases in resting blood pressure                      
+Min: Patient with a resting systolic blood pressure of 100 mm of Hg:
+
+```{r}
+logit_to_probability(-.76)
+```
+
+As we can see that the probability of having hypertension is around .31
+
+Max: Patient with a resting systolic blood pressure of 200 mm of Hg:
+
+```{r}
+logit_to_probability(.94)
+```
+
+We can see that as the resting blood pressure increased the probability went up to .72.
+
+**Probability curve:**
+
+```{r}
+predicted.data.bps <- data.frame(
+  probability.of.target=log_bps$fitted.values,
+  trestbps=hyper_t$trestbps)
+```
+
+```{r}
+ggplot(data=predicted.data.bps, aes(x=trestbps, y=probability.of.target)) +
+  geom_point(aes(color=trestbps), size=3) +
+  xlab("Resting Blood Pressure") +
+  ylab("Predicted probability of Hypertension")+labs(title = "Probability Curve for Blood pressure", label ="BP")+theme_bw()
+```
+
+Similarly, we can check out cholesterol
+```{r}
+log_chol <- glm(target ~ chol, data=hyper_t, family="binomial")
+summary(log_chol)
+```
+
+$$logs of hypertension = -.9944 + 0.003255  *  cholesterol$$
+
+Min: Probability of patient having 150mg/dl cholesterol:
+
+```{r}
+logit_to_probability(-.505)
+```
+
+Max: Probability of patient having 550mg/dl cholesterol:
+
+```{r}
+logit_to_probability(.79585)
+```
+
+and the probability curve:
+
+```{r}
+predicted.data.chol <- data.frame(
+  probability.of.target=log_chol$fitted.values,
+  chol=hyper_t$chol)
+```
+
+```{r}
+ggplot(data=predicted.data.chol, aes(x=chol, y=probability.of.target)) +
+  geom_point(aes(color=chol), size=3) +
+  xlab("Cholesterol") +
+  ylab("Predicted probability of hypertension")+labs(title = "Probability Curve for Cholesterol")+theme_bw()
+```
+
+Similarly,  we can do that for all the independent variables and we might find an interesting solution at the end but over here we will try to stick with our question:
+
+## Modeling and Validation: {.tabset}
+
+### Setting up the data:
+
+Let's create a model of our data so we will split the data set into testing and training sets. We will use training data set to create a model and then predict the answers using testing data set. We can validate our prediction using confusion matrix:
+
+We will split the data 80/20 and will use 80% of the overall data set (`hyper_t`) to train our model and we will use the rest of 20% data to test our model, in other words we will perform supervised machine learning using logistic regression:
+
+
+```{r}
+set.seed(1992)
+split <- sample.split(hyper_t, SplitRatio = .8)
+
+```
+
+Assigning the training and testing data to variables:
+
+```{r}
+hyper_train <- subset(hyper_t, split == "TRUE")
+hyper_test <- subset(hyper_t, split == "FALSE")
+```
+
+
+### Model 1:
+
+Now we have got our training and testing data so lets create our machine learning model. But before creating a model we will need to select the independent variable out of pool of variables listed in the data frame. Even though we started of with a question to predict hypertension using sex, age, blood pressure, cholesterol, and heart rate but after carrying out exploratory data analysis we did find that age and sex can not be a good predictor so that reduces our independent variable to three only. Over here we will create a model using heart rate, blood pressure and cholesterol level but after creating a model we will definitely do carry out some cross validation to check the performance of the model and will try to re tweak the model for better accuracy.
+
+```{r}
+log_my <- glm(target ~ thalach+trestbps+chol, data=hyper_train, family="binomial")
+```
+
+Lets use our model to check the prediction. We will use `predict()` function to predict and save the response in a variable:
+
+```{r}
+resp <- predict(log_my, hyper_test, type = "response")
+```
+
+
+#### Confusion matrix:
+
+Now we have got the predictions using our testing data set but in order the evaluate our model and check the accuracy we will create a confusion matrix for it.
+
+```{r}
+con_mat <- table(Actual_value = hyper_test$target, Predicted_value = resp>.5)
+```
+
+Our confusion matrix is ready and lets display the matrix and evaluate the performance of our model
+
+```{r}
+con_mat
+```
+
+As we can see that our model does not have a very good accuracy we do a quick math we can find out the this model is around 71% accurate which is un acceptable in the medical field. So in order to make our model better we can add more independent variables that can affect the prediction of hypertension in patients:
+
+#### McFadden R-Square:
+
+Calculating McFadden R-square:
+
+```{r}
+l.null <- log_my$null.deviance/-2
+l.proposed <- log_my$deviance/-2
+```
+
+```{r}
+(l.null - l.proposed) / l.null
+```
+
+### Model 2:
+
+After not a very successful model using only three variables we went back to exploratory data analysis and looked for more independent variables that can improve our model's performance. This time around we added variables like chest pain, fasting blood sugar, exercise induced angina, and number of chest vessels narrowed by more than 50%. We did feed above mention variables to our model and evaluated it for performance.
+
+Here is our model:
+
+```{r}
+log_def <- glm(target ~ cp+slope+thalach+thal+ca+trestbps+fbs+exang, data=hyper_train, family="binomial")
+```
+
+Let's predict using testing data:
+
+```{r}
+resp_n <- predict(log_def, hyper_test, type = "response")
+```
+
+
+#### Confusion matrix:
+
+We have the predicted and actual lets create a confusion matrix for our model
+
+```{r}
+con_mat_n <- table(Actual_value = hyper_test$target, Predicted_value = resp_n>.5)
+```
+
+Here is our confusion matrix:
+
+```{r}
+con_mat_n
+```
+
+We can see that our accuracy has now jumped up to 87%. Which is much better than our previous model but still might get disregarded since the data set in from medical field and the accuracy require in the field of medical sciences is in higher 90s (%).
+
+#### McFadden R-Square:
+
+Calculating McFadden R-square:
+
+```{r}
+ll.null <- log_def$null.deviance/-2
+ll.proposed <- log_def$deviance/-2
+```
+
+```{r}
+(ll.null - ll.proposed) / ll.null
+```
+
+
+### Model 3:
+
+We did add a lot of variables in our previous model and we did see some improvement, so does this mean that the more variables we put in the better it will get? To find the answer lets use all the independent variables from the data set and check out the performance of the model. We will start with creating a model:
+```{r}
+log_all <- glm(target ~ ., data=hyper_t, family="binomial")
+```
+
+Now our model is ready under the name of `log_all`. Let's apply our model to the testing data set and create the confusion matrix. We can also calculate the accuracy from the confusion matrix.
+
+```{r}
+resp_all <- predict(log_all, hyper_test, type = "response")
+```
+
+
+#### Confusion matrix:
+
+Our predictions are ready to be evaluated so let's create a confusion matrix:
+
+```{r}
+con_mat_all <- table(Actual_value = hyper_test$target, Predicted_value = resp_all>.5)
+```
+
+Calling our confusion matrix:
+
+```{r}
+con_mat_all
+```
+
+As we can see the accuracy is around 85.6% which again not great and I would recommend to use model 2 rather than model 3. Since model 2 and less independent variables and we still get an accuracy which is a shade over model 3 with all the variables.
+
+#### McFadden R-Square:
+
+Calculating McFadden R-square:
+
+```{r}
+lll.null <- log_all$null.deviance/-2
+lll.proposed <- log_all$deviance/-2
+```
+
+```{r}
+(lll.null - lll.proposed) / lll.null
+```
+
+
+
+## Attempt at Shiny App:
+
+```{r eval=FALSE}
+
+
+# Import libraries
+library(shiny)
+library(shinythemes)
+library(data.table)
+
+
+####################################
+# Model                            #
+####################################
+
+
+
+log_def <- glm(target ~ cp+ca+thalach+thal+trestbps+slope+fbs+exang, data=hyper_train, family="binomial")
+
+
+
+####################################
+# User interface                   #
+####################################
+
+ui <- fluidPage(theme = shinytheme("united"),
+  
+  # Page header
+  headerPanel('Hypertension'),
+  
+  # Input values
+  sidebarPanel(
+    HTML("<h3>Input parameters</h3>"),
+    
+    sliderInput("ca", label = "Chest Vessel:", min = 0, max=4,value=1),
+    selectInput("cp", label = "Chest Pain",
+                choices = list("Asympomatic" = 0, "Angina" = 1, "Atypical Angina" = 2, "Non-Anginal" = 3), 
+                selected = 0),
+    sliderInput("trestbps", "Systolic Blood pressure:",
+                min = 94, max = 200,
+                value = 115),
+    sliderInput("thalac", "Heart Rate:",
+                min = 71, max = 202,
+                value = 90),
+    selectInput("thal", label = "Thalassemia type", 
+                choices = list("Normal" = 3, "Fixed defect" = "6","Reversible defect"=7), 
+                selected = 3),
+    selectInput("slope", label = "Slope of the peak exercise ST segment", 
+                choices = list("Unsloping" = 0, "Flat" = 1,"Downsloping"=2), 
+                selected = 1),
+    selectInput("fbs", label = "Fasting Blood sugar over 120 mg/dl:", 
+                choices = list("Yes" = 1, "No" = 0), 
+                selected = 0),
+    selectInput("exang", label = "Exercise Induced Angina:", 
+                choices = list("Yes" = 1, "No" = 0), 
+                selected = 1),
+    
+    actionButton("submitbutton", "Submit", class = "btn btn-primary")
+  ),
+  
+  mainPanel(
+    tags$label(h3('Status/Output')), # Status/Output Text Box
+    verbatimTextOutput('contents'),
+    tableOutput('tabledata') # Prediction results table
+    
+  )
+)
+
+####################################
+# Server                           #
+####################################
+
+server <- function(input, output, session) {
+
+  # Input Data
+  datasetInput <- reactive({  
+    
+  # outlook,temperature,humidity,windy,play
+length
+  df <- data.frame(
+    Name = c("ca",
+             "cp",
+             "trestbps",
+             "thalach",
+             "thal",
+             "slope",
+             "fbs",
+             "exang"),
+    Value = as.character(c(input$ca,
+                           input$cp, input$trestbps, input$thalach,
+                           input$thal,
+                           input$slope,
+                           input$fbs, input$exang)),
+    stringsAsFactors = FALSE)
+  
+ # target <- "target"
+ # df <- rbind(df, target)
+ # input <- transpose(df)
+ # write.table(input,"input.csv", sep=",", quote = FALSE, row.names = FALSE, col.names = FALSE)
+  
+  #test <- hyper_test|>
+  #  select(ca,cp,trestbps,thalach,thal,slope,fbs,exang,target)
+  
+  #test$outlook <- factor(test$outlook, levels = c("overcast", "rainy", "sunny"))
+  
+resp_n <- predict(log_def, hyper_test, type = "response")  
+
+  
+con_mat_n <- table(Actual_value = hyper_test$target, Predicted_value = resp_n>.5)
+
+Output <- con_mat_n
+  
+  })
+  
+  # Status/Output Text Box
+  output$contents <- renderPrint({
+    if (input$submitbutton>0) { 
+      isolate("Calculation complete.") 
+    } else {
+      return("Server is ready for calculation.")
+    }
+  })
+  
+  # Prediction results table
+  output$tabledata <- renderTable({
+    if (input$submitbutton>0) { 
+      isolate(datasetInput()) 
+    } 
+  })
+  
+}
+
+####################################
+# Create the shiny app             #
+####################################
+shinyApp(ui = ui, server = server)
+```
+ 
+
+## Probalility curve of model 2:
+
+
+```{r}
+predicted.data.fit <- data.frame(
+ probability.of.target=log_def$fitted.values,
+  target=hyper_train$target)
+```
+
+```{r}
+predicted.data.fit <- predicted.data.fit[
+order(predicted.data.fit$probability.of.target, decreasing=FALSE),]
+predicted.data.fit$rank <- 1:nrow(predicted.data.fit)
+```
+
+```{r}
+ggplot(data=predicted.data.fit, aes(x=rank, y=probability.of.target)) +
+  geom_point(aes(color=target), alpha=.5, shape=4, stroke=2) +
+  xlab("Index") +
+  ylab("Predicted probability of hypertension")+labs(title = "Probability curve over training index")+theme_bw()+theme(legend.position ='none')
+```
+
+The blue points above .5 are hypertensive and red below .5 probability are non hypertensive.
+
+## **Conclusion:**
+
+We did start off with a question to check if resting blood pressure, cholesterol, age, sex and heart rate predict presence of hypertension but there were some other factors involved too. Before starting this study a general thought/assumption was built around a narrative that whoever has a high blood pressure is always a hypertension patient, in fact the words "hypertension" and "High blood pressure" were used interchangeably but after carrying out this research a lot of other factors that contribute towards hypertension  were revealed. Factors like type of chest pain, narrowing of chest vessel more than 50%, heart rate and fasting blood sugar were playing key roles in predicting presence of hypertension among patients. When we used a model based on variables that were mentioned in the question of our research, the accuracy to predict hypertension came out to be only 71% which is way below the par in medical field but upon adding more variables like chest pain, chest vessels, fasting blood sugar e.t.c the accuracy went up to 87% which meant that all of those factors/variables were contributing towards predicting the hypertension. Apart from all this, other interesting finds were patients with low resting blood pressure and still subjected to hypertension, people from different ages and different level of cholesterol having hypertension.
+
+## **Reference:**
+
+[1] https://iopscience.iop.org/article/10.1088/1742-6596/1217/1/012109/pdf 
+
+[2] https://www.sciencedirect.com/topics/medicine-and-dentistry/logistic-regression-analysis
+
+[3] https://www.endocrineweb.com/condition/diabetes/diabetes-and-high-blood-pressure
+
+[4] https://www.pennmedicine.org/updates/blogs/heart-and-vascular-blog/2015/february/protecting-your-heart-what-is-a-healthy-cholesterol-level-for-you
+
+[5] https://www.cdc.gov/bloodpressure/index.html 
